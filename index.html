@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Open City – Prototype</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101820;color:#fff;font-family:Arial,sans-serif}
+#game{display:block;width:100vw;height:100vh;background:#263b35;touch-action:none}
+#hud{position:fixed;top:10px;left:10px;display:flex;gap:8px;flex-wrap:wrap;max-width:75%;pointer-events:none}
+.pill{background:#101820d9;border:1px solid #ffffff35;border-radius:8px;padding:7px 10px;font-size:12px}
+#help{position:fixed;top:10px;right:10px;background:#101820d9;padding:8px 10px;border-radius:8px;font-size:11px;max-width:155px;line-height:1.4}
+#message{position:fixed;left:50%;top:22%;transform:translateX(-50%);background:#101820ed;padding:12px 18px;border-radius:10px;display:none;text-align:center;max-width:85%;font-size:14px}
+#panel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#111d;color:white;border:1px solid #ffffff55;border-radius:14px;padding:18px;min-width:250px;display:none;box-shadow:0 10px 40px #0009}
+#panel h3{margin:0 0 10px}button{background:#e2a53b;color:#171717;border:0;border-radius:8px;padding:10px 12px;font-weight:bold;margin:4px;cursor:pointer}
+#panel .close{background:#53616a;color:white}
+#controls{position:fixed;bottom:15px;left:15px;right:15px;display:flex;justify-content:space-between;align-items:end;pointer-events:none}
+.pad{display:grid;grid-template-columns:44px 44px 44px;grid-template-rows:44px 44px 44px;gap:3px;pointer-events:auto}
+.pad button,.actions button{background:#17232bc9;color:#fff;border:1px solid #ffffff55;padding:0;font-size:18px;touch-action:none}
+.pad .up{grid-column:2}.pad .left{grid-column:1;grid-row:2}.pad .down{grid-column:2;grid-row:2}.pad .right{grid-column:3;grid-row:2}
+.actions{display:flex;flex-direction:column;align-items:end;pointer-events:auto}.actions button{min-width:66px;min-height:43px;font-size:12px;margin:3px}
+@media(min-width:800px){#controls{opacity:.45}.pad button,.actions button{min-width:52px;min-height:48px}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="hud"><div class="pill">OPEN CITY · DEMO</div><div class="pill" id="cash">$500</div><div class="pill" id="health">♥ 100</div><div class="pill" id="weapon">Fists</div></div>
+<div id="help">WASD / arrows: move<br>Shift: run · E: interact<br>Space: action · M: map</div>
+<div id="message"></div><div id="panel"></div>
+<div id="controls">
+ <div class="pad"><button class="up" data-key="ArrowUp">▲</button><button class="left" data-key="ArrowLeft">◀</button><button class="down" data-key="ArrowDown">▼</button><button class="right" data-key="ArrowRight">▶</button></div>
+ <div class="actions"><button id="interact">INTERACT</button><button id="action">ACTION</button><button id="run">RUN</button></div>
+</div>
+<script>
+(()=>{
+const c=document.getElementById('game'),ctx=c.getContext('2d');
+let W,H,dpr=1;function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*dpr;c.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}addEventListener('resize',resize);resize();
+const world={w:3000,h:2400}, player={x:420,y:440,dir:0,cash:500,hp:100,weapon:'Fists',food:0,car:false,skin:'#d89a67',shirt:'#e5b64c'};
+const keys={}, buildings=[],roads=[],tracksY=1160;let trainX=-600,trainSpeed=1.35,showMap=false,car={x:600,y:500,active:false};
+function rect(x,y,w,h,color){ctx.fillStyle=color;ctx.fillRect(x,y,w,h)}
+for(let y=150;y<world.h;y+=390){roads.push({x:0,y:y,w:world.w,h:100});}
+for(let x=170;x<world.w;x+=430){roads.push({x:x,y:0,w:90,h:world.h});}
+const places=[
+ {x:250,y:240,w:150,h:105,n:'GUN SHOP',kind:'gun',color:'#8e5146'},
+ {x:780,y:260,w:160,h:100,n:'DINER',kind:'food',color:'#b77c37'},
+ {x:1400,y:250,w:210,h:120,n:'CLOTHING',kind:'cloth',color:'#76558f'},
+ {x:2180,y:300,w:180,h:110,n:'BEACH CAFE',kind:'food',color:'#b77c37'},
+ {x:260,y:790,w:190,h:120,n:'PAWN & AMMO',kind:'gun',color:'#8e5146'},
+ {x:1250,y:810,w:220,h:130,n:'CITY HOSPITAL',kind:'hospital',color:'#d5d7d1'},
+ {x:2180,y:820,w:190,h:120,n:'MARKET',kind:'food',color:'#b77c37'},
+ {x:450,y:1740,w:220,h:130,n:'WAREHOUSE',kind:'warehouse',color:'#68777b'},
+ {x:1570,y:1780,w:200,h:120,n:'GARAGE',kind:'garage',color:'#637c70'}
+];
+for(const p of places)buildings.push(p);
+const trees=[];for(let i=0;i<100;i++)trees.push({x:Math.random()*world.w,y:Math.random()*world.h,r:8+Math.random()*8});
+function msg(t){let el=document.getElementById('message');el.textContent=t;el.style.display='block';clearTimeout(msg.timer);msg.timer=setTimeout(()=>el.style.display='none',2300)}
+function panel(title,body,buttons){let p=document.getElementById('panel');p.innerHTML='<h3>'+title+'</h3><div>'+body+'</div><div style="margin-top:12px">'+buttons+'<button class="close" onclick="document.getElementById(\'panel\').style.display=\'none\'">CLOSE</button></div>';p.style.display='block'}
+function nearest(){let best=null,dist=1e9;for(const b of buildings){let d=Math.hypot(player.x-(b.x+b.w/2),player.y-(b.y+b.h/2));if(d<Math.max(b.w,b.h)/2+65&&d<dist){best=b;dist=d}}return best}
+function interact(){let b=nearest();if(!b){if(Math.hypot(player.x-car.x,player.y-car.y)<65){player.car=!player.car;car.active=player.car;msg(player.car?'You got in the car.':'You left the car.');return}msg('Nothing nearby to interact with.');return}
+ if(b.kind==='gun')panel(b.n,'Choose equipment. Ammo and combat are simplified in this prototype.',`<button onclick="buyGun('Pistol',250)">Pistol · $250</button><button onclick="buyGun('Shotgun',400)">Shotgun · $400</button>`);
+ if(b.kind==='food')panel(b.n,'Grab a quick meal to restore health.',`<button onclick="buyFood()">Eat meal · $25</button>`);
+ if(b.kind==='cloth')panel(b.n,'Change your look.',`<button onclick="customize('gold')">Gold outfit</button><button onclick="customize('blue')">Blue outfit</button><button onclick="customize('red')">Red outfit</button>`);
+ if(b.kind==='hospital')panel(b.n,'Medical services.',`<button onclick="heal()">Restore health · $100</button>`);
+ if(b.kind==='garage')panel(b.n,'Your car is parked nearby. Walk close and press E to enter it.','');
+ if(b.kind==='warehouse')panel(b.n,'Industrial district. Freight trains pass nearby.','');
+}
+window.buyGun=(g,cost)=>{if(player.cash>=cost){player.cash-=cost;player.weapon=g;msg(g+' purchased.');}else msg('Not enough cash.');updateHud()};
+window.buyFood=()=>{if(player.cash>=25){player.cash-=25;player.hp=Math.min(100,player.hp+30);player.food++;msg('Meal eaten. Health restored.')}else msg('Not enough cash.');updateHud()};
+window.customize=(v)=>{player.shirt=v==='gold'?'#e5b64c':v==='blue'?'#4286c5':'#b84b48';msg('Outfit updated.');};
+window.heal=()=>{if(player.cash>=100){player.cash-=100;player.hp=100;msg('You feel better.')}else msg('Not enough cash.');updateHud()};
+function updateHud(){document.getElementById('cash').textContent='$'+player.cash;document.getElementById('health').textContent='♥ '+player.hp;document.getElementById('weapon').textContent=player.weapon}
+function action(){if(player.weapon==='Fists')msg('You throw a punch.');else msg(player.weapon+' fired! (visual prototype)');}
+function worldDraw(){ctx.fillStyle='#647d61';ctx.fillRect(0,0,world.w,world.h);
+ rect(0,0,world.w,700,'#687d63');rect(0,1450,world.w,950,'#777765');rect(1850,0,1150,world.h,'#648a85');
+ rect(1850,0,1150,520,'#d8c58e');rect(1850,0,1150,160,'#3d8291');
+ for(const r of roads){rect(r.x,r.y,r.w,r.h,'#454b50');if(r.w>r.h){for(let x=20;x<world.w;x+=80)rect(x,r.y+48,38,3,'#c4b78b')}else{for(let y=20;y<world.h;y+=80)rect(r.x+44,y,3,38,'#c4b78b')}}
+ rect(0,tracksY-48,world.w,100,'#4b4c49');for(let x=0;x<world.w;x+=34){rect(x,tracksY-36,18,6,'#a58c68');rect(x,tracksY+30,18,6,'#a58c68')}rect(0,tracksY-22,world.w,5,'#b9b8b0');rect(0,tracksY+17,world.w,5,'#b9b8b0');
+ for(const t of trees){ctx.fillStyle='#345b3b';ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,Math.PI*2);ctx.fill();ctx.fillStyle='#52794a';ctx.beginPath();ctx.arc(t.x-3,t.y-3,t.r*.65,0,Math.PI*2);ctx.fill()}
+ for(const b of buildings){rect(b.x+8,b.y+8,b.w,b.h,'#303a3b');rect(b.x,b.y,b.w,b.h,b.color);rect(b.x+8,b.y+8,b.w-16,12,'#ffffff35');ctx.fillStyle='#fff';ctx.font='bold 13px Arial';ctx.fillText(b.n,b.x+8,b.y+b.h/2+4);for(let wx=b.x+18;wx<b.x+b.w-12;wx+=36)rect(wx,b.y+30,16,18,'#a9c6c6')}
+ trainX+=trainSpeed;if(trainX>world.w+600)trainX=-700;
+ for(let i=0;i<5;i++){let tx=trainX+i*125;rect(tx,tracksY-17,112,34,i===0?'#c65c36':'#536b78');rect(tx+10,tracksY-10,18,12,'#a9d1d3');rect(tx+42,tracksY-10,18,12,'#a9d1d3');rect(tx+75,tracksY-10,18,12,'#a9d1d3');ctx.fillStyle='#20282b';ctx.beginPath();ctx.arc(tx+25,tracksY+19,7,0,7);ctx.arc(tx+88,tracksY+19,7,0,7);ctx.fill()}
+ rect(car.x-24,car.y-13,48,26,'#d2d5d4');rect(car.x-12,car.y-10,22,20,'#5a8994');
+ ctx.save();ctx.translate(player.x,player.y);ctx.rotate(player.dir);ctx.fillStyle='#222';ctx.beginPath();ctx.ellipse(0,8,9,6,0,0,7);ctx.fill();ctx.fillStyle=player.shirt;ctx.fillRect(-8,-8,16,20);ctx.fillStyle=player.skin;ctx.beginPath();ctx.arc(0,-12,7,0,7);ctx.fill();ctx.fillStyle='#222';ctx.fillRect(-7,10,5,8);ctx.fillRect(2,10,5,8);ctx.restore();
+}
+function draw(){ctx.clearRect(0,0,W,H);let camX=Math.max(0,Math.min(world.w-W,player.x-W/2)),camY=Math.max(0,Math.min(world.h-H,player.y-H/2));ctx.save();ctx.translate(-camX,-camY);worldDraw();ctx.restore();
+ if(showMap){ctx.fillStyle='#081116e8';ctx.fillRect(W-190,70,175,140);ctx.strokeStyle='#fff';ctx.strokeRect(W-190,70,175,140);ctx.fillStyle='#e9c35b';ctx.beginPath();ctx.arc(W-190+player.x/world.w*175,70+player.y/world.h*140,4,0,7);ctx.fill();ctx.fillStyle='#fff';ctx.font='12px Arial';ctx.fillText('CITY MAP',W-180,88)}
+ requestAnimationFrame(draw)}
+function move(){let dx=0,dy=0;if(keys.ArrowLeft||keys.a)dx--;if(keys.ArrowRight||keys.d)dx++;if(keys.ArrowUp||keys.w)dy--;if(keys.ArrowDown||keys.s)dy++;if(dx||dy){let speed=(keys.Shift?3.5:2.2)*(player.car?1.8:1);let l=Math.hypot(dx,dy);player.x=Math.max(20,Math.min(world.w-20,player.x+dx/l*speed));player.y=Math.max(20,Math.min(world.h-20,player.y+dy/l*speed));player.dir=Math.atan2(dy,dx)+Math.PI/2}requestAnimationFrame(move)}
+addEventListener('keydown',e=>{keys[e.key]=true;if(e.key.toLowerCase()==='e')interact();if(e.code==='Space'){e.preventDefault();action()}if(e.key.toLowerCase()==='m')showMap=!showMap});
+addEventListener('keyup',e=>keys[e.key]=false);
+document.querySelectorAll('[data-key]').forEach(b=>{let k=b.dataset.key;b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});['pointerup','pointerleave','pointercancel'].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false))});
+document.getElementById('interact').onclick=interact;document.getElementById('action').onclick=action;document.getElementById('run').onpointerdown=()=>keys.Shift=true;document.getElementById('run').onpointerup=()=>keys.Shift=false;
+updateHud();move();draw();msg('Welcome to Open City! Explore and find the shops.');
+})();
+</script></body></html>
